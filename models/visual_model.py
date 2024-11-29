@@ -4,7 +4,7 @@ import timm
 from models.pet_modules import AdaptFormer
 
 class PointCloudEncoder(nn.Module):
-    def __init__(self, dim=512):
+    def __init__(self, dim=768):
         super(PointCloudEncoder, self).__init__()
         self.norm1 = nn.LayerNorm(dim)
         self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=8)
@@ -32,10 +32,10 @@ class AVmodel(nn.Module):
         self.v2.head = nn.Identity()
 
         # Learnable projection layer for Point Clouds
-        self.pc_proj = nn.Linear(3, 512)
+        self.pc_proj = nn.Linear(3, 768)
 
         # Initialize Point Cloud Encoder
-        pc_encoder = PointCloudEncoder(dim=512)
+        pc_encoder = PointCloudEncoder(dim=768)
 
         # Encoders
         encoder_layers = []
@@ -55,7 +55,7 @@ class AVmodel(nn.Module):
 
         # Classifier
         self.classifier = nn.Sequential(
-            nn.Linear(512, num_classes)
+            nn.Linear(768, num_classes)
         )
 
     def forward_pc_features(self, pc):
