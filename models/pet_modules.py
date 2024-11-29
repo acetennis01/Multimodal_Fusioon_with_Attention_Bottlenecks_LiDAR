@@ -31,8 +31,8 @@ class AdaptFormer(nn.Module):
         self.dim = dim
 
         # Point Cloud
-        self.pc_down = nn.Linear(768, dim)  # Assuming point cloud input has shape (B, N_points, 3)
-        self.pc_up = nn.Linear(dim, 768)
+        self.pc_down = nn.Linear(512, dim)  # Assuming point cloud input has shape (B, N_points, 3)
+        self.pc_up = nn.Linear(dim, 512)
         nn.init.xavier_uniform_(self.pc_down.weight)
         nn.init.zeros_(self.pc_down.bias)
         nn.init.zeros_(self.pc_up.weight)
@@ -40,8 +40,8 @@ class AdaptFormer(nn.Module):
         self.pc_scale = nn.Parameter(torch.ones(1))
 
         # RGB images
-        self.rgb_down = nn.Linear(768, dim)
-        self.rgb_up = nn.Linear(dim, 768)
+        self.rgb_down = nn.Linear(512, dim)
+        self.rgb_up = nn.Linear(dim, 512)
         nn.init.xavier_uniform_(self.rgb_down.weight)
         nn.init.zeros_(self.rgb_down.bias)
         nn.init.zeros_(self.rgb_up.weight)
@@ -50,7 +50,7 @@ class AdaptFormer(nn.Module):
 
         # Latents
         self.num_latents = num_latents
-        self.latents = nn.Parameter(torch.empty(1, num_latents, 768).normal_(std=0.02))
+        self.latents = nn.Parameter(torch.empty(1, num_latents, 512).normal_(std=0.02))
         self.scale_pc = nn.Parameter(torch.zeros(1))
         self.scale_v = nn.Parameter(torch.zeros(1))
 
