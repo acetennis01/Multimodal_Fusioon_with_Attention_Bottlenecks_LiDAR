@@ -25,7 +25,7 @@ class AVmodel(nn.Module):
         super(AVmodel, self).__init__()
 
         # RGB Vision Transformer
-        self.v2 = timm.create_model('vit_base_patch16_224.augreg_in21k', pretrained=True)
+        self.v2 = timm.create_model('vit_base_patch16_224', pretrained=True)
 
         # Remove unnecessary layers for RGB processing
         self.v2.pre_logits = nn.Identity()

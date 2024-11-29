@@ -2,6 +2,7 @@ import argparse
 import numpy as np
 import torch
 import torch.nn as nn
+from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from dataloader.av_data import KITTIMultiDriveDataset
 from models.visual_model import AVmodel
@@ -12,7 +13,7 @@ def parse_options():
     ##### TRAINING DYNAMICS
     parser.add_argument('--gpu_id', type=str, default="cpu", help='the GPU id')
     parser.add_argument('--lr', type=float, default=3e-4, help='initial learning rate')
-    parser.add_argument('--batch_size', type=int, default=2, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=1, help='batch size')  # Lower default batch size
     parser.add_argument('--num_epochs', type=int, default=15, help='total training epochs')
     parser.add_argument('--seed', type=int, default=1111, help='random seed')
 
@@ -29,75 +30,48 @@ def parse_options():
     if opts.gpu_id.lower() == "cpu" or not torch.cuda.is_available():
         opts.device = torch.device("cpu")
     else:
-        opts.device = torch.device(opts.gpu_id)
+        opts.device = torch.device(f"cuda:{opts.gpu_id}")  # Updated GPU ID handling
     return opts
-
-############################################################################################################################################################################################################
-############################################################################################################################################################################################################
-
-# def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
-#     epoch_loss = []
-#     sum_correct_pred = 0
-#     total_samples = 0
-
-#     model.train()
-
-#     for point_clouds, rgb_frames, _, oxts_data in train_data_loader:
-#         point_clouds = point_clouds.to(device)
-#         rgb_frames = rgb_frames.to(device)
-#         oxts_data = oxts_data.to(device)
-
-#         optimizer.zero_grad()
-#         preds = model(point_clouds, rgb_frames)
-
-#         labels = oxts_data[:, -1].long()  # Assuming last value in OXTS data is the label
-#         _loss = loss_fn(preds, labels)
-#         epoch_loss.append(_loss.item())
-
-#         _loss.backward()
-#         optimizer.step()
-
-#         sum_correct_pred += (torch.argmax(preds, dim=1) == labels).sum().item()
-#         total_samples += len(labels)
-
-#     acc = round(sum_correct_pred / total_samples, 5) * 100
-#     epoch_loss = np.mean(epoch_loss)
-#     return epoch_loss, acc
 
 def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
     epoch_loss = []
     sum_correct_pred = 0
     total_samples = 0
-    
+
     model.train()
+    scaler = GradScaler()  # Add gradient scaler for mixed precision
 
     for batch_idx, (point_clouds, rgb_frames, _, oxts_data) in enumerate(train_data_loader):
         print(f"Processing batch {batch_idx + 1}/{len(train_data_loader)}")
-        
+
         # Move data to device
         point_clouds = point_clouds.to(device)
         rgb_frames = rgb_frames.to(device)
         oxts_data = oxts_data.to(device)
         
-        # Forward pass
         optimizer.zero_grad()
-        preds = model(point_clouds, rgb_frames)
-        _loss = loss_fn(preds, labels)
-        _loss.backward()
-        optimizer.step()
         
-        # Track metrics
+        # Mixed precision forward pass
+        with autocast():
+            preds = model(point_clouds, rgb_frames)
+            labels = oxts_data[:, -1].long()  # Ensure labels are correct
+            _loss = loss_fn(preds, labels)
+        
+        # Backward pass with scaler
+        scaler.scale(_loss).backward()
+        scaler.step(optimizer)
+        scaler.update()
+
         epoch_loss.append(_loss.item())
         sum_correct_pred += (torch.argmax(preds, dim=1) == labels).sum().item()
         total_samples += len(labels)
-        
+
         # Log training stats periodically
         if (batch_idx + 1) % 10 == 0:
             print(f"Batch {batch_idx + 1}/{len(train_data_loader)} - Loss: {np.mean(epoch_loss):.4f}")
     
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
-
 
 def val_one_epoch(val_data_loader, model, loss_fn, device):
     epoch_loss = []
@@ -113,20 +87,15 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
             oxts_data = oxts_data.to(device)
 
             preds = model(point_clouds, rgb_frames)
-
-            labels = oxts_data[:, -1].long()  # Assuming last value in OXTS data is the label
+            labels = oxts_data[:, -1].long()
             _loss = loss_fn(preds, labels)
-            epoch_loss.append(_loss.item())
 
+            epoch_loss.append(_loss.item())
             sum_correct_pred += (torch.argmax(preds, dim=1) == labels).sum().item()
             total_samples += len(labels)
 
     acc = round(sum_correct_pred / total_samples, 5) * 100
-    epoch_loss = np.mean(epoch_loss)
-    return epoch_loss, acc
-
-############################################################################################################################################################################################################
-############################################################################################################################################################################################################
+    return np.mean(epoch_loss), acc
 
 def collate_fn(batch):
     point_clouds, rgb_frames, timestamps, oxts_data = [], [], [], []
@@ -151,15 +120,11 @@ def collate_fn(batch):
     
     return point_clouds, rgb_frames, timestamps, oxts_data
 
-
 def train_test(args):
     dataset = KITTIMultiDriveDataset(root_dir=args.data_root)
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
-
-    # trainloader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=0)
-    # valloader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
     trainloader = DataLoader(
         train_dataset,
@@ -177,18 +142,6 @@ def train_test(args):
         num_workers=0  # Avoid multiprocessing issues
     )
 
-    for batch_idx, (point_clouds, rgb_frames, _, oxts_data) in enumerate(trainloader):
-        print(f"Batch {batch_idx + 1}:")
-        print(f"  Point Cloud Shape: {point_clouds.shape}")
-        print(f"  RGB Frames Shape: {rgb_frames.shape}")
-        print(f"  OXTS Data Shape: {oxts_data.shape}")
-        print(f"  Memory Usage: {torch.cuda.memory_allocated() / (1024 ** 3):.2f} GB" if torch.cuda.is_available() else "No GPU")
-        break
-
-
-
-    print("\t Dataset Loaded")
-
     model = AVmodel(num_classes=args.num_classes, num_latents=args.num_latent, dim=args.adapter_dim)
     model.to(args.device)
     print("\t Model Loaded")
@@ -201,6 +154,7 @@ def train_test(args):
 
     print("\t Started Training")
     for epoch in range(args.num_epochs):
+        torch.cuda.empty_cache()  # Clear memory before each epoch
         loss, acc = train_one_epoch(trainloader, model, optimizer, loss_fn, args.device)
         val_loss, val_acc = val_one_epoch(valloader, model, loss_fn, args.device)
 
@@ -212,9 +166,7 @@ def train_test(args):
     print("\n\t Completed Training \n")  
     print("\t Best Results........", np.max(np.asarray(best_val_acc)))
 
-############################################################################################################################################################################################################
-############################################################################################################################################################################################################
-
 if __name__ == "__main__":
     opts = parse_options()
     train_test(args=opts)
+
