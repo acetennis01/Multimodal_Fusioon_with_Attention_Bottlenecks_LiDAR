@@ -52,6 +52,10 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
         optimizer.zero_grad()
         
         # Mixed precision forward pass
+
+        # print(point_clouds.shape)
+        print(f"Point clouds batch shape: {point_clouds.shape}")
+        print(f"RGB frames batch shape: {rgb_frames.shape}")
         with autocast():
             preds = model(point_clouds, rgb_frames)
             labels = oxts_data[:, -1].long()  # Ensure labels are correct
@@ -97,26 +101,70 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
 
+
+def lidar_to_histogram_features(lidar, crop=256):
+    """
+    Convert LiDAR point cloud into 2-bin histogram over 256x256 grid
+    """
+
+    def splat_points(point_cloud):
+        # 256 x 256 grid
+        pixels_per_meter = 8
+        hist_max_per_pixel = 5
+        x_meters_max = 14
+        y_meters_max = 28
+        xbins = np.linspace(
+            -2 * x_meters_max,
+            2 * x_meters_max + 1,
+            2 * x_meters_max * pixels_per_meter + 1,
+        )
+        ybins = np.linspace(-y_meters_max, 0, y_meters_max * pixels_per_meter + 1)
+        hist = np.histogramdd(point_cloud[..., :2], bins=(xbins, ybins))[0]
+        hist[hist > hist_max_per_pixel] = hist_max_per_pixel
+        overhead_splat = hist / hist_max_per_pixel
+        return overhead_splat
+
+    below = lidar[lidar[..., 2] <= -2.0]
+    above = lidar[lidar[..., 2] > -2.0]
+    below_features = splat_points(below)
+    above_features = splat_points(above)
+    total_features = below_features + above_features
+    features = np.stack([below_features, above_features, total_features], axis=-1)
+    features = np.transpose(features, (2, 0, 1)).astype(np.float32)  # Shape: (3, H, W)
+    return features
+
+
 def collate_fn(batch):
     point_clouds, rgb_frames, timestamps, oxts_data = [], [], [], []
     
-    # Find the max number of points in the batch for padding
-    max_points = max(pc.shape[0] for pc, _, _, _ in batch)
-    
     for point_cloud, rgb_frame, timestamp, oxts in batch:
-        # Pad the point cloud to the max size in the batch
-        padded_pc = torch.nn.functional.pad(
-            point_cloud, (0, 0, 0, max_points - point_cloud.shape[0]), value=0
-        )
-        point_clouds.append(padded_pc)
+        print(f"Point cloud shape: {point_cloud.shape}")
+        
+        # Transform the LiDAR point cloud to a pseudo-image
+        pseudo_image = lidar_to_histogram_features(point_cloud)
+        
+        # Print the shape of the pseudo-image before and after adding batch dimension
+        print(f"Pseudo-image shape (before unsqueeze): {pseudo_image.shape}")
+        
+        # Ensure the pseudo-image has 3 channels (for compatibility with the encoder)
+        # Here we don't use unsqueeze(0) since we're going to stack the images later.
+        pseudo_image = torch.tensor(pseudo_image)  # Shape should be [3, 224, 224]
+        
+        print(f"Pseudo-image shape (after converting to tensor): {pseudo_image.shape}")
+        
+        point_clouds.append(pseudo_image)
         rgb_frames.append(rgb_frame)
         timestamps.append(timestamp)
         oxts_data.append(oxts)
     
-    # Stack the padded point clouds and other data
-    point_clouds = torch.stack(point_clouds)
+    # Stack the point clouds and other data to create a batch
+    # Now point_clouds is a list of tensors of shape [3, 224, 224]
+    point_clouds = torch.stack(point_clouds)  # Shape: [B, 3, 224, 224]
     rgb_frames = torch.stack(rgb_frames)
     oxts_data = torch.stack(oxts_data)
+
+    # Print final shapes to ensure correctness
+    print(f"Final point clouds batch shape: {point_clouds.shape}")
     
     return point_clouds, rgb_frames, timestamps, oxts_data
 

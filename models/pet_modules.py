@@ -1,3 +1,5 @@
+# pet_modules.py
+
 import torch
 import torch.nn as nn
 
@@ -6,110 +8,130 @@ class QuickGELU(nn.Module):
         return x * torch.sigmoid(1.702 * x)
 
 class AdaptFormer(nn.Module):
-    def __init__(self, num_latents, dim, pc_enc, rgb_enc):
+    def __init__(self, num_latents, dim):
         super(AdaptFormer, self).__init__()
-
-        # Point Cloud
-        # Attention Layer
-        self.pc_norm1 = pc_enc.norm1
-        self.pc_attn = pc_enc.attn
-        # Feed Forward Layers
-        self.pc_norm2 = pc_enc.norm2
-        self.pc_mlp = pc_enc.mlp
-
-        # RGB
-        # Attention Layer
-        self.rgb_norm1 = rgb_enc.norm1
-        self.rgb_attn = rgb_enc.attn
-        # Feed Forward Layers
-        self.rgb_norm2 = rgb_enc.norm2
-        self.rgb_mlp = rgb_enc.mlp
 
         # Adapter parameters
         self.act = QuickGELU()
         self.dropout = nn.Dropout(0.1)
         self.dim = dim
 
-        # Point Cloud
-        self.pc_down = nn.Linear(768, dim)  # Assuming point cloud input has shape (B, N_points, 3)
-        self.pc_up = nn.Linear(dim, 768)
+        # Down and Up Projection for Point Cloud (pseudo-image)
+        self.pc_down = nn.Linear(dim, dim)
+        self.pc_up = nn.Linear(dim, dim)
         nn.init.xavier_uniform_(self.pc_down.weight)
         nn.init.zeros_(self.pc_down.bias)
-        nn.init.zeros_(self.pc_up.weight)
+        nn.init.xavier_uniform_(self.pc_up.weight)
         nn.init.zeros_(self.pc_up.bias)
         self.pc_scale = nn.Parameter(torch.ones(1))
 
-        # RGB images
-        self.rgb_down = nn.Linear(768, dim)
-        self.rgb_up = nn.Linear(dim, 768)
+        # Down and Up Projection for RGB
+        self.rgb_down = nn.Linear(dim, dim)
+        self.rgb_up = nn.Linear(dim, dim)
         nn.init.xavier_uniform_(self.rgb_down.weight)
         nn.init.zeros_(self.rgb_down.bias)
-        nn.init.zeros_(self.rgb_up.weight)
+        nn.init.xavier_uniform_(self.rgb_up.weight)
         nn.init.zeros_(self.rgb_up.bias)
         self.rgb_scale = nn.Parameter(torch.ones(1))
 
         # Latents
         self.num_latents = num_latents
-        self.latents = nn.Parameter(torch.empty(1, num_latents, 768).normal_(std=0.02))
+        self.latents = nn.Parameter(torch.empty(1, num_latents, dim).normal_(std=0.02))
         self.scale_pc = nn.Parameter(torch.zeros(1))
         self.scale_v = nn.Parameter(torch.zeros(1))
 
-    def attention(self, q, k, v):  # requires q, k, v to have same dim
-        B, N, C = q.shape
-        attn = (q @ k.transpose(-2, -1)) * (C ** -0.5)  # scaling
-        attn = attn.softmax(dim=-1)
-        x = (attn @ v).reshape(B, N, C)
-        return x
+        # Define attention layers
+        self.attn = nn.MultiheadAttention(embed_dim=dim, num_heads=8)
 
-    # Latent Fusion
+    def attention(self, q, k, v):
+        # q, k, v: [seq_len, batch, dim]
+        attn_output, attn_weights = self.attn(q, k, v)
+        return attn_output
+
     def fusion(self, pc_tokens, visual_tokens):
-        # shapes
-        BS = pc_tokens.shape[0]
-        # concat all the tokens
-        concat_ = torch.cat((pc_tokens, visual_tokens), dim=1)
-        # cross attention (PC+RGB -->> latents)
-        fused_latents = self.attention(q=self.latents.expand(BS, -1, -1), k=concat_, v=concat_)
-        # cross attention (latents -->> PC+RGB)
-        pc_tokens = pc_tokens + self.scale_pc * self.attention(q=pc_tokens, k=fused_latents, v=fused_latents)
-        visual_tokens = visual_tokens + self.scale_v * self.attention(q=visual_tokens, k=fused_latents, v=fused_latents)
+        print(f"Fusion Input - PC Tokens: {pc_tokens.shape}, Visual Tokens: {visual_tokens.shape}")
+
+        BS, pc_len, dim = pc_tokens.shape
+        _, vis_len, _ = visual_tokens.shape
+
+        # Concatenate along the sequence length
+        concat_ = torch.cat((pc_tokens, visual_tokens), dim=1)  # [B, 1 + num_tokens, dim]
+        print(f"Concatenated Tokens: {concat_.shape}")
+
+        # Permute for MultiheadAttention: [seq_len, batch, dim]
+        concat_ = concat_.permute(1, 0, 2)  # [1 + num_tokens, B, dim]
+        print(f"Permuted Concatenated Tokens: {concat_.shape}")
+
+        # Initialize latents for cross-attention
+        latents = self.latents.expand(BS, -1, -1).permute(1, 0, 2)  # [num_latents, B, dim]
+        print(f"Latents: {latents.shape}")
+
+        # Cross-attention: latents attend to concat_
+        fused_latents = self.attention(latents, concat_, concat_)  # [num_latents, B, dim]
+        print(f"Fused Latents: {fused_latents.shape}")
+
+        # Permute back to [B, num_latents, dim]
+        fused_latents = fused_latents.permute(1, 0, 2)  # [B, num_latents, dim]
+        print(f"Permuted Fused Latents: {fused_latents.shape}")
+
+        # Cross-attention: pc_tokens attend to fused_latents
+        pc_attn = self.attention(
+            pc_tokens.permute(1, 0, 2),  # [1, B, dim]
+            fused_latents.permute(1, 0, 2),  # [num_latents, B, dim]
+            fused_latents.permute(1, 0, 2)   # [num_latents, B, dim]
+        )  # [1, B, dim]
+        print(f"PC Attention Output: {pc_attn.shape}")
+
+        pc_attn = pc_attn.permute(1, 0, 2)  # [B, 1, dim]
+        print(f"PC Attention Permuted: {pc_attn.shape}")
+
+        pc_tokens = pc_tokens + self.pc_scale * pc_attn  # [B,1,dim]
+        print(f"PC Tokens after Attention and Scaling: {pc_tokens.shape}")
+
+        # Cross-attention: visual_tokens attend to fused_latents
+        visual_attn = self.attention(
+            visual_tokens.permute(1, 0, 2),  # [num_tokens, B, dim]
+            fused_latents.permute(1, 0, 2),  # [num_latents, B, dim]
+            fused_latents.permute(1, 0, 2)   # [num_latents, B, dim]
+        )  # [num_tokens, B, dim]
+        print(f"Visual Attention Output: {visual_attn.shape}")
+
+        visual_attn = visual_attn.permute(1, 0, 2)  # [B, num_tokens, dim]
+        print(f"Visual Attention Permuted: {visual_attn.shape}")
+
+        visual_tokens = visual_tokens + self.rgb_scale * visual_attn  # [B, num_tokens, dim]
+        print(f"Visual Tokens after Attention and Scaling: {visual_tokens.shape}")
+
         return pc_tokens, visual_tokens
 
-    # def forward_pc_AF(self, x):
-    #     x_down = self.pc_down(x)
-    #     x_down = self.act(x_down)
-    #     x_down = self.dropout(x_down)
-    #     x_up = self.pc_up(x_down)
-    #     return x_up
-
     def forward_pc_AF(self, x):
-        B, N, C = x.shape  # B: batch size, N: sequence length, C: feature dimension
-        x = x.reshape(B * N, C)  # Flatten batch and sequence dimensions
-        x_down = self.pc_down(x)
+        x_down = self.pc_down(x)  # [B,1,dim] -> [B,1,dim]
         x_down = self.act(x_down)
         x_down = self.dropout(x_down)
-        x_up = self.pc_up(x_down)
-        x_up = x_up.reshape(B, N, -1)  # Restore original batch and sequence dimensions
-        return x_up
-
+        x_up = self.pc_up(x_down)  # [B,1,dim]
+        return x_up * self.pc_scale  # [B,1,dim]
 
     def forward_visual_AF(self, x):
-        x_down = self.rgb_down(x)
+        x_down = self.rgb_down(x)  # [B,num_tokens,dim] -> [B,num_tokens,dim]
         x_down = self.act(x_down)
         x_down = self.dropout(x_down)
-        x_up = self.rgb_up(x_down)
-        return x_up
+        x_up = self.rgb_up(x_down)  # [B,num_tokens,dim]
+        return x_up * self.rgb_scale  # [B,num_tokens,dim]
 
-    def forward(self, pc, y):
-        # Bottleneck Fusion
-        pc, y = self.fusion(pc, y)
+    def forward(self, pc, rgb):
+        # pc: [B, 1, dim]
+        # rgb: [B, num_tokens, dim]
 
-        # Attn skip connections
-        # pc = pc + self.pc_attn(self.pc_norm1(pc))
-        pc = pc + self.pc_attn(self.pc_norm1(pc), self.pc_norm1(pc), self.pc_norm1(pc))[0]
-        y = y + self.rgb_attn(self.rgb_norm1(y))
+        print(f"AdaptFormer Forward - PC Features: {pc.shape}")
+        print(f"AdaptFormer Forward - RGB Features: {rgb.shape}")
 
-        # FFN + skip connections
-        pc = pc + self.pc_mlp(self.pc_norm2(pc)) + self.forward_pc_AF(self.pc_norm2(pc)) * self.pc_scale
-        y = y + self.rgb_mlp(self.rgb_norm2(y)) + self.forward_visual_AF(self.rgb_norm2(y)) * self.rgb_scale
+        # Fusion: [B,1,dim], [B, num_tokens, dim]
+        pc_features, rgb_features = self.fusion(pc, rgb)  # [B,1,dim], [B,num_tokens,dim]
 
-        return pc, y
+        # Feed-forward Network + Skip Connections
+        pc_features = pc_features + self.forward_pc_AF(pc_features)  # [B,1,dim]
+        rgb_features = rgb_features + self.forward_visual_AF(rgb_features)  # [B,num_tokens,dim]
+
+        print(f"AdaptFormer Forward - After FFN: PC Features: {pc_features.shape}, RGB Features: {rgb_features.shape}")
+
+        return pc_features, rgb_features
