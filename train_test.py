@@ -104,51 +104,7 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
 
-'''
 
-def lidar_to_histogram_features(lidar, crop=256):
-    """
-    Convert LiDAR point cloud into 2-bin histogram over a grid defined by the point cloud extents
-    """
-    
-    def splat_points(point_cloud):
-        # Determine the min and max extents of the point cloud
-        x_min, x_max = np.min(point_cloud[:, 0]), np.max(point_cloud[:, 0])
-        y_min, y_max = np.min(point_cloud[:, 1]), np.max(point_cloud[:, 1])
-        
-        # Ensure we have at least some range
-        if x_min == x_max:
-            x_max = x_min + 1.0
-        if y_min == y_max:
-            y_max = y_min + 1.0
-        
-        # Define the desired number of bins (e.g., 256 in each dimension)
-        n_bins_x = 256
-        n_bins_y = 256
-        
-        # Create bin edges
-        xbins = np.linspace(x_min, x_max, n_bins_x + 1)
-        ybins = np.linspace(y_min, y_max, n_bins_y + 1)
-        
-        hist_max_per_pixel = 5
-        
-        hist = np.histogramdd(point_cloud[..., :2], bins=(xbins, ybins))[0]
-        hist[hist > hist_max_per_pixel] = hist_max_per_pixel
-        overhead_splat = hist / hist_max_per_pixel
-        return overhead_splat
-
-    # Separate points based on z-axis threshold (-2.0)
-    below = lidar[lidar[..., 2] <= -2.0]
-    above = lidar[lidar[..., 2] > -2.0]
-    
-    below_features = splat_points(below) if len(below) > 0 else np.zeros((256, 256))
-    above_features = splat_points(above) if len(above) > 0 else np.zeros((256, 256))
-    
-    total_features = below_features + above_features
-    features = np.stack([below_features, above_features, total_features], axis=-1)
-    features = np.transpose(features, (2, 0, 1)).astype(np.float32)  # Shape: (3, H, W)
-    return features
-'''
 def lidar_to_histogram_features(lidar, crop=256):
     """
     Convert LiDAR point cloud into 2-bin histogram over 256x256 grid

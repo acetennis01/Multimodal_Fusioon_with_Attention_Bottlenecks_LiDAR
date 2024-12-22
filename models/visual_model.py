@@ -17,7 +17,7 @@ class PointCloudEncoder(nn.Module):
         self.conv4 = nn.Conv2d(256, 512, kernel_size=3, stride=1, padding=1)
 
         # Update the fully connected layer to match the flattened size
-        self.fc = nn.Linear(512 * 14 * 14, dim)  # Changed from 512*16*16 to 512*14*14
+        self.fc = nn.Linear(512 * 14 * 14, 768)  # Changed from 512*16*16 to 512*14*14
 
         # Batch normalization layers
         self.bn1 = nn.BatchNorm2d(64)
@@ -59,7 +59,7 @@ class PointCloudEncoder(nn.Module):
         x = x.flatten(start_dim=1)  # [B, 512 * 14 * 14]
         # print(f"After flatten: {x.shape}")
 
-        self.fc = nn.Linear(512 * 14 * 14, 768)
+        # self.fc = nn.Linear(512 * 14 * 14, 768)
 
         # Pass through the fully connected layer
         x = self.fc(x)  # [B, dim]
