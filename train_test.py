@@ -227,7 +227,7 @@ def train_test(args):
     print('\t Trainable params = ', sum(p.numel() for p in model.parameters() if p.requires_grad))
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-    loss_fn = nn.CrossEntropyLoss()
+    loss_fn = nn.CrossEntropyLoss(ignore_index=-1)
 
     best_val_acc = []
 
