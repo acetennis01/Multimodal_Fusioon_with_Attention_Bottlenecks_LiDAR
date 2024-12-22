@@ -29,35 +29,41 @@ class PointCloudEncoder(nn.Module):
         self.dropout = nn.Dropout(0.5)
 
     def forward(self, x):
-        print(f"Input to PointCloudEncoder: {x.shape}")  # [B, 3, 224, 224]
+        # print(f"Input to PointCloudEncoder: {x.shape}")
 
-        x = F.relu(self.bn1(self.conv1(x)))  # [B, 64, 224, 224]
-        print(f"After conv1: {x.shape}")
-        x = F.max_pool2d(x, 2)  # [B, 64, 112, 112]
-        print(f"After pool1: {x.shape}")
+        x = F.relu(self.bn1(self.conv1(x)))
+        # print(f"After conv1: {x.shape}")
+        x = F.max_pool2d(x, 2)
+        # print(f"After pool1: {x.shape}")
         
-        x = F.relu(self.bn2(self.conv2(x)))  # [B, 128, 112, 112]
-        print(f"After conv2: {x.shape}")
-        x = F.max_pool2d(x, 2)  # [B, 128, 56, 56]
-        print(f"After pool2: {x.shape}")
+        x = F.relu(self.bn2(self.conv2(x)))
+        # print(f"After conv2: {x.shape}")
+        x = F.max_pool2d(x, 2)
+        # print(f"After pool2: {x.shape}")
 
-        x = F.relu(self.bn3(self.conv3(x)))  # [B, 256, 56, 56]
-        print(f"After conv3: {x.shape}")
-        x = F.max_pool2d(x, 2)  # [B, 256, 28, 28]
-        print(f"After pool3: {x.shape}")
+        x = F.relu(self.bn3(self.conv3(x)))
+        # print(f"After conv3: {x.shape}")
+        x = F.max_pool2d(x, 2)
+        # print(f"After pool3: {x.shape}")
 
-        x = F.relu(self.bn4(self.conv4(x)))  # [B, 512, 28, 28]
-        print(f"After conv4: {x.shape}")
-        x = F.max_pool2d(x, 2)  # [B, 512, 14, 14]
-        print(f"After pool4: {x.shape}")
+        x = F.relu(self.bn4(self.conv4(x)))
+        # print(f"After conv4: {x.shape}")
+        x = F.max_pool2d(x, 2)
+        # print(f"After pool4: {x.shape}")
 
-        # Flatten the tensor before passing through the fully connected layer
-        x = x.flatten(start_dim=1)  # [B, 512 *14 *14=100352]
-        print(f"After flatten: {x.shape}")
+        # Now we adaptively pool to 14x14, regardless of input size.
+        x = F.adaptive_avg_pool2d(x, (14, 14))
+        # print(f"After adaptive_avg_pool2d: {x.shape}")  # [B, 512, 14, 14]
 
-        # Pass through the fully connected layer to reduce to the desired embedding size `dim`
-        x = self.fc(x)  # [B, dim=768]
-        print(f"After fc: {x.shape}")
+        # Flatten once
+        x = x.flatten(start_dim=1)  # [B, 512 * 14 * 14]
+        # print(f"After flatten: {x.shape}")
+
+        self.fc = nn.Linear(512 * 14 * 14, 768)
+
+        # Pass through the fully connected layer
+        x = self.fc(x)  # [B, dim]
+        # print(f"After fc: {x.shape}")
 
         # Apply dropout for regularization
         x = self.dropout(x)
@@ -84,7 +90,7 @@ class AVmodel(nn.Module):
             encoder_layers.append(
                 AdaptFormer(
                     num_latents=num_latents,
-                    dim=dim
+                    dim=768
                 )
             )
         self.pointcloud_rgb_blocks = nn.Sequential(*encoder_layers)
@@ -100,7 +106,7 @@ class AVmodel(nn.Module):
     def forward_pc_features(self, pc):
         # Process pseudo-image LiDAR data through the PointCloudEncoder
         pc = self.pc_encoder(pc)  # [B, dim]
-        print(f"AVmodel - PC Features after Encoder: {pc.shape}")
+        # # print(f"AVmodel - PC Features after Encoder: {pc.shape}")
         return pc
 
     def forward_rgb_features(self, x):
@@ -127,41 +133,41 @@ class AVmodel(nn.Module):
 
         # Flatten spatial and temporal dimensions
         x = x.permute(0, 3, 1, 2).reshape(B, dim, -1).permute(0, 2, 1)  # Shape: (B, no_of_tokens, dim)
-        print(f"AVmodel - RGB Features after Patch Embed and Reshape: {x.shape}")
+        # print(f"AVmodel - RGB Features after Patch Embed and Reshape: {x.shape}")
 
         # Add class token
         cls_token = self.v2.cls_token.expand(B, -1, -1)  # [B,1,dim]
         x = torch.cat((cls_token, x), dim=1)  # [B, 1 + no_of_tokens, dim]
-        print(f"AVmodel - RGB Features after Adding Class Token: {x.shape}")
+        # print(f"AVmodel - RGB Features after Adding Class Token: {x.shape}")
 
         # Add positional embeddings
         pos_embed = self.v2.pos_embed.permute(0, 2, 1)  # [B, dim, seq_len]
         if pos_embed.shape[1] != x.shape[1]:
             pos_embed = nn.functional.interpolate(pos_embed, size=x.shape[1], mode="linear")
         x = x + pos_embed.permute(0, 2, 1)  # [B, 1 + no_of_tokens, dim]
-        print(f"AVmodel - RGB Features after Adding Positional Embeddings: {x.shape}")
+        # print(f"AVmodel - RGB Features after Adding Positional Embeddings: {x.shape}")
 
         return x  # [B, 1 + num_tokens, dim]
 
     def forward_encoder(self, pc, rgb):
         # Ensure pc has shape [B, 1, dim]
         pc = pc.unsqueeze(1)  # [B, 1, dim]
-        print(f"AVmodel - PC Features after Unsqueeze: {pc.shape}")
+        # print(f"AVmodel - PC Features after Unsqueeze: {pc.shape}")
 
         for idx, blk in enumerate(self.pointcloud_rgb_blocks):
-            print(f"AVmodel - Processing AdaptFormer Block {idx + 1}")
+            # print(f"AVmodel - Processing AdaptFormer Block {idx + 1}")
             pc, rgb = blk(pc, rgb)
-            print(f"AVmodel - After Block {idx + 1}: PC: {pc.shape}, RGB: {rgb.shape}")
+            # print(f"AVmodel - After Block {idx + 1}: PC: {pc.shape}, RGB: {rgb.shape}")
 
         # Post-processing (norm) for both modalities
         pc = self.rgb_post_norm(pc)  # [B, 1, dim]
         rgb = self.rgb_post_norm(rgb)  # [B, 1 + num_tokens, dim]
-        print(f"AVmodel - After Normalization: PC: {pc.shape}, RGB: {rgb.shape}")
+        # print(f"AVmodel - After Normalization: PC: {pc.shape}, RGB: {rgb.shape}")
 
         # Extract class tokens
         pc = pc[:, 0]  # [B, dim]
         rgb = rgb[:, 0]  # [B, dim]
-        print(f"AVmodel - Extracted Class Tokens: PC: {pc.shape}, RGB: {rgb.shape}")
+        # print(f"AVmodel - Extracted Class Tokens: PC: {pc.shape}, RGB: {rgb.shape}")
 
         return pc, rgb
 
@@ -176,6 +182,6 @@ class AVmodel(nn.Module):
         # Combine features from both modalities and classify
         logits = (pc + rgb) * 0.5  # [B, dim]
         logits = self.classifier(logits)  # [B, num_classes]
-        print(f"AVmodel - Logits Shape: {logits.shape}")
+        # print(f"AVmodel - Logits Shape: {logits.shape}")
 
         return logits

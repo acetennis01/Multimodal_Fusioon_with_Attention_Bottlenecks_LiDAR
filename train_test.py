@@ -6,6 +6,9 @@ from torch.cuda.amp import GradScaler, autocast
 from torch.utils.data import DataLoader
 from dataloader.av_data import KITTIMultiDriveDataset
 from models.visual_model import AVmodel
+import os
+import torchvision
+from torchvision.utils import save_image
 
 def parse_options():
     parser = argparse.ArgumentParser(description="Multimodal Bottleneck Attention with KITTI Dataset")
@@ -18,7 +21,7 @@ def parse_options():
     parser.add_argument('--seed', type=int, default=1111, help='random seed')
 
     ##### ADAPTER AND LATENT PARAMETERS
-    parser.add_argument('--adapter_dim', type=int, default=8, help='dimension of the low-rank adapter')
+    parser.add_argument('--adapter_dim', type=int, default=768, help='dimension of the low-rank adapter')
     parser.add_argument('--num_latent', type=int, default=4, help='number of latent tokens')
     parser.add_argument('--num_classes', type=int, default=28, help='number of output classes')
 
@@ -101,7 +104,51 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
 
+'''
 
+def lidar_to_histogram_features(lidar, crop=256):
+    """
+    Convert LiDAR point cloud into 2-bin histogram over a grid defined by the point cloud extents
+    """
+    
+    def splat_points(point_cloud):
+        # Determine the min and max extents of the point cloud
+        x_min, x_max = np.min(point_cloud[:, 0]), np.max(point_cloud[:, 0])
+        y_min, y_max = np.min(point_cloud[:, 1]), np.max(point_cloud[:, 1])
+        
+        # Ensure we have at least some range
+        if x_min == x_max:
+            x_max = x_min + 1.0
+        if y_min == y_max:
+            y_max = y_min + 1.0
+        
+        # Define the desired number of bins (e.g., 256 in each dimension)
+        n_bins_x = 256
+        n_bins_y = 256
+        
+        # Create bin edges
+        xbins = np.linspace(x_min, x_max, n_bins_x + 1)
+        ybins = np.linspace(y_min, y_max, n_bins_y + 1)
+        
+        hist_max_per_pixel = 5
+        
+        hist = np.histogramdd(point_cloud[..., :2], bins=(xbins, ybins))[0]
+        hist[hist > hist_max_per_pixel] = hist_max_per_pixel
+        overhead_splat = hist / hist_max_per_pixel
+        return overhead_splat
+
+    # Separate points based on z-axis threshold (-2.0)
+    below = lidar[lidar[..., 2] <= -2.0]
+    above = lidar[lidar[..., 2] > -2.0]
+    
+    below_features = splat_points(below) if len(below) > 0 else np.zeros((256, 256))
+    above_features = splat_points(above) if len(above) > 0 else np.zeros((256, 256))
+    
+    total_features = below_features + above_features
+    features = np.stack([below_features, above_features, total_features], axis=-1)
+    features = np.transpose(features, (2, 0, 1)).astype(np.float32)  # Shape: (3, H, W)
+    return features
+'''
 def lidar_to_histogram_features(lidar, crop=256):
     """
     Convert LiDAR point cloud into 2-bin histogram over 256x256 grid
@@ -109,16 +156,31 @@ def lidar_to_histogram_features(lidar, crop=256):
 
     def splat_points(point_cloud):
         # 256 x 256 grid
-        pixels_per_meter = 8
+        pixels_per_meter = 16
         hist_max_per_pixel = 5
-        x_meters_max = 14
-        y_meters_max = 28
+        x_meters_max = 28
+        y_meters_max = 56
+
+        # # Increase the range and shift it to the right
+        # x_start = 0           # start at 0 meters (or a positive offset)
+        # x_end = 100            # extend further to the right
+        # pixels_per_meter = 8
+
+        # xbins = np.linspace(
+        #     x_start,
+        #     x_end,
+        #     (x_end - x_start) * pixels_per_meter + 1,
+        # )
+
+
         xbins = np.linspace(
-            -2 * x_meters_max,
-            2 * x_meters_max + 1,
+            -4 * x_meters_max,
+            4 * x_meters_max + 1,
             2 * x_meters_max * pixels_per_meter + 1,
         )
-        ybins = np.linspace(-y_meters_max, 0, y_meters_max * pixels_per_meter + 1)
+        # ybins = np.linspace(-y_meters_max, 0, y_meters_max * pixels_per_meter + 1)
+        ybins = np.linspace(-y_meters_max, y_meters_max, y_meters_max * pixels_per_meter + 1)
+        
         hist = np.histogramdd(point_cloud[..., :2], bins=(xbins, ybins))[0]
         hist[hist > hist_max_per_pixel] = hist_max_per_pixel
         overhead_splat = hist / hist_max_per_pixel
@@ -136,6 +198,11 @@ def lidar_to_histogram_features(lidar, crop=256):
 
 def collate_fn(batch):
     point_clouds, rgb_frames, timestamps, oxts_data = [], [], [], []
+
+    output_dir = "pseudo_images"
+    
+    i = 0
+
     
     for point_cloud, rgb_frame, timestamp, oxts in batch:
         print(f"Point cloud shape: {point_cloud.shape}")
@@ -156,6 +223,14 @@ def collate_fn(batch):
         rgb_frames.append(rgb_frame)
         timestamps.append(timestamp)
         oxts_data.append(oxts)
+
+        # print(pseudo_image)
+
+        output_path = os.path.join(output_dir, f"pseudo_image_{i}.png")
+        torchvision.utils.save_image(pseudo_image, output_path)
+
+        i += 1
+
     
     # Stack the point clouds and other data to create a batch
     # Now point_clouds is a list of tensors of shape [3, 224, 224]
