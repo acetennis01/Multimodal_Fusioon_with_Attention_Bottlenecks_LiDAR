@@ -62,6 +62,12 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
         with autocast():
             preds = model(point_clouds, rgb_frames)
             labels = oxts_data[:, -1].long()  # Ensure labels are correct
+
+            print("Label min:", labels.min().item(), " Label max:", labels.max().item())
+            if (labels < 0).any() or (labels >= preds.shape[1]).any():
+                print("Found invalid label. Skipping this batch.")
+                continue  # skip or handle
+            
             _loss = loss_fn(preds, labels)
         
         # Backward pass with scaler
