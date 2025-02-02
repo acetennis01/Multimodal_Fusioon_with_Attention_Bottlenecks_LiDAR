@@ -30,10 +30,15 @@ def parse_options():
 
     opts = parser.parse_args()
     torch.manual_seed(opts.seed)
-    if opts.gpu_id.lower() == "cpu" or not torch.cuda.is_available():
-        opts.device = torch.device("cpu")
-    else:
-        opts.device = torch.device(f"cuda:{opts.gpu_id}")  # Updated GPU ID handling
+
+    opts.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    
+
+    # if opts.gpu_id.lower() == "cpu" or not torch.cuda.is_available():
+    #     opts.device = torch.device("cpu")
+    # else:
+    #     opts.device = torch.device(f"cuda:{opts.gpu_id}")  # Updated GPU ID handling
     return opts
 
 def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
