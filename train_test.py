@@ -59,19 +59,30 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
         # print(point_clouds.shape)
         print(f"Point clouds batch shape: {point_clouds.shape}")
         print(f"RGB frames batch shape: {rgb_frames.shape}")
+        # with autocast():
+        #     preds = model(point_clouds, rgb_frames)
+        #     labels = oxts_data[:, -1].long()  # Ensure labels are correct
+
+        #     print("Label min:", labels.min().item(), " Label max:", labels.max().item())
+        #     if (labels < 0).any() or (labels >= preds.shape[1]).any():
+        #         print("Found invalid label. Skipping this batch.")
+        #         continue  # skip or handle
+            
+        #     _loss = loss_fn(preds, labels)
+        
+        # # Backward pass with scaler
+        # scaler.scale(_loss).backward()
+
         with autocast():
             preds = model(point_clouds, rgb_frames)
-            labels = oxts_data[:, -1].long()  # Ensure labels are correct
+            labels = oxts_data[:, -1].long().to(device)  # Ensure labels are on the correct device
 
-            print("Label min:", labels.min().item(), " Label max:", labels.max().item())
-            if (labels < 0).any() or (labels >= preds.shape[1]).any():
-                print("Found invalid label. Skipping this batch.")
-                continue  # skip or handle
+            print(f"Preds device: {preds.device}, Labels device: {labels.device}")
             
-            _loss = loss_fn(preds, labels)
-        
-        # Backward pass with scaler
+            _loss = loss_fn(preds, labels).to(device)  # Ensure loss is also on the correct device
+
         scaler.scale(_loss).backward()
+
         scaler.step(optimizer)
         scaler.update()
 
