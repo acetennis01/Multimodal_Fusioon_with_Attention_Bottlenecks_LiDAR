@@ -178,7 +178,7 @@ def collate_fn(batch):
     return point_clouds, rgb_frames, timestamps, oxts_data
 
 
-def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
+def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
     epoch_loss = []
     sum_correct_pred = 0
     total_samples = 0
@@ -300,7 +300,7 @@ def train_test(args):
     # Wrap the epoch loop with tqdm
     for epoch in tqdm(range(num_epochs), desc="Epochs"):
         torch.cuda.empty_cache()  # Clear memory before each epoch
-        loss, acc = train_one_epoch(trainloader, model, optimizer, loss_fn, args.device)
+        loss, acc = train_one_epoch(trainloader, model, optimizer, loss_fn, args.device, args)
         val_loss, val_acc = val_one_epoch(valloader, model, loss_fn, args.device)
 
         print('\nEpoch:', epoch + 1)
