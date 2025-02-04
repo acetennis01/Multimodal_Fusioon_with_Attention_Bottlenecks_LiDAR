@@ -209,7 +209,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
 
         with autocast():
             preds = model(point_clouds, rgb_frames)
-            labels = oxts_data[:, -5].long().to(device)
+            labels = oxts_data[:, -1].long().to(device)
             if labels.min().item() < 0 or labels.max().item() >= args.num_classes:
                 tqdm.write(f"Invalid labels detected: min={labels.min().item()}, max={labels.max().item()}")
             _loss = loss_fn(preds, labels)
@@ -217,6 +217,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
 
 
         scaler.scale(_loss).backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
         scaler.update()
 
@@ -248,7 +249,7 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
             oxts_data = oxts_data.to(device)
 
             preds = model(point_clouds, rgb_frames)
-            labels = oxts_data[:, -5].long()
+            labels = oxts_data[:, -1].long()
             _loss = loss_fn(preds, labels)
 
             if torch.isnan(_loss):
