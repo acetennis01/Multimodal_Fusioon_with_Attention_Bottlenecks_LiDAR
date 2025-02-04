@@ -10,6 +10,8 @@ import os
 import torchvision
 from torchvision.utils import save_image
 from tqdm import tqdm
+import torchvision.transforms.functional as TF
+
 
 
 def parse_options():
@@ -162,6 +164,8 @@ def collate_fn(batch):
         # pseudo_image = TF.resize(torch.tensor(pseudo_image), [224, 224]).numpy()
         
         pseudo_image = torch.tensor(pseudo_image)  # Convert to tensor
+        pseudo_image = TF.resize(pseudo_image.unsqueeze(0), size=[224, 224], interpolation=TF.InterpolationMode.BILINEAR).squeeze(0)
+
         point_clouds.append(pseudo_image)
         rgb_frames.append(rgb_frame)
         timestamps.append(timestamp)
@@ -189,6 +193,31 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
     # Wrap the data loader with tqdm for progress bar
     progress_bar = tqdm(enumerate(train_data_loader), total=len(train_data_loader), desc="Training", leave=False)
     
+
+    for batch_idx, (point_clouds, rgb_frames, _, oxts_data) in progress_bar:
+        # Move data to device
+        point_clouds = point_clouds.to(device)
+        rgb_frames = rgb_frames.to(device)
+        oxts_data = oxts_data.to(device)
+        
+        optimizer.zero_grad()
+
+        # Run the model in full precision (FP32) by NOT using autocast
+        preds = model(point_clouds, rgb_frames)
+        labels = oxts_data[:, -1].long().to(device)
+        if labels.min().item() < 0 or labels.max().item() >= args.num_classes:
+            tqdm.write(f"Invalid labels detected: min={labels.min().item()}, max={labels.max().item()}")
+        _loss = loss_fn(preds, labels)
+        
+        # Optionally print if loss is NaN
+        if torch.isnan(_loss):
+            print("Loss is NaN!")
+        
+        _loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        optimizer.step()
+
+    '''
     for batch_idx, (point_clouds, rgb_frames, _, oxts_data) in progress_bar:
         # Move data to device
         point_clouds = point_clouds.to(device)
@@ -209,10 +238,17 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
 
         with autocast():
             preds = model(point_clouds, rgb_frames)
+            # Debug: check if preds contain NaNs or are extremely large
+            if torch.isnan(preds).any():
+                print("NaN detected in model predictions!")
+            max_val = preds.abs().max().item()
+            if max_val > 1e4:
+                print("Model predictions are very large:", max_val)
             labels = oxts_data[:, -1].long().to(device)
             if labels.min().item() < 0 or labels.max().item() >= args.num_classes:
                 tqdm.write(f"Invalid labels detected: min={labels.min().item()}, max={labels.max().item()}")
             _loss = loss_fn(preds, labels)
+
 
 
 
@@ -227,7 +263,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
 
         # Update tqdm's progress bar with current metrics
         progress_bar.set_postfix(loss=np.mean(epoch_loss))
-
+    '''
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
 

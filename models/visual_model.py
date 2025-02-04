@@ -20,7 +20,9 @@ class PointCloudEncoder(nn.Module):
         self.fc = nn.Linear(512 * 14 * 14, 768)  # Changed from 512*16*16 to 512*14*14
 
         # Batch normalization layers
-        self.bn1 = nn.InstanceNorm2d(64, affine=True)
+        #self.bn1 = nn.InstanceNorm2d(64, affine=True)
+        self.bn1 = nn.GroupNorm(num_groups=8, num_channels=64)
+
         self.bn2 = nn.BatchNorm2d(128)
         self.bn3 = nn.BatchNorm2d(256)
         self.bn4 = nn.BatchNorm2d(512)
