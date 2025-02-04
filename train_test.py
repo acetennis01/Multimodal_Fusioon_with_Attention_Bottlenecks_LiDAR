@@ -142,7 +142,7 @@ def collate_fn(batch):
 '''
 def collate_fn(batch):
 
-    filtered_batch = [sample for sample in batch if sample[-1].item() != -1]
+    filtered_batch = [sample for sample in batch if sample[-1][-1].item() != -1]
     if len(filtered_batch) == 0:
         return None
 
