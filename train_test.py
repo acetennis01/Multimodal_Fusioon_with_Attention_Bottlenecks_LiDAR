@@ -190,19 +190,19 @@ def collate_fn(batch):
 
     
     for point_cloud, rgb_frame, timestamp, oxts in batch:
-        print(f"Point cloud shape: {point_cloud.shape}")
+        #print(f"Point cloud shape: {point_cloud.shape}")
         
         # Transform the LiDAR point cloud to a pseudo-image
         pseudo_image = lidar_to_histogram_features(point_cloud)
         
         # Print the shape of the pseudo-image before and after adding batch dimension
-        print(f"Pseudo-image shape (before unsqueeze): {pseudo_image.shape}")
+        #print(f"Pseudo-image shape (before unsqueeze): {pseudo_image.shape}")
         
         # Ensure the pseudo-image has 3 channels (for compatibility with the encoder)
         # Here we don't use unsqueeze(0) since we're going to stack the images later.
         pseudo_image = torch.tensor(pseudo_image)  # Shape should be [3, 224, 224]
         
-        print(f"Pseudo-image shape (after converting to tensor): {pseudo_image.shape}")
+        #print(f"Pseudo-image shape (after converting to tensor): {pseudo_image.shape}")
         
         point_clouds.append(pseudo_image)
         rgb_frames.append(rgb_frame)
