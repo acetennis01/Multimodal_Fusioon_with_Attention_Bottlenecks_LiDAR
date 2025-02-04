@@ -141,11 +141,27 @@ class AVmodel(nn.Module):
         # print(f"AVmodel - RGB Features after Adding Class Token: {x.shape}")
 
         # Add positional embeddings
+        '''
+        
         pos_embed = self.v2.pos_embed.permute(0, 2, 1)  # [B, dim, seq_len]
         if pos_embed.shape[1] != x.shape[1]:
             pos_embed = nn.functional.interpolate(pos_embed, size=x.shape[1], mode="linear")
         x = x + pos_embed.permute(0, 2, 1)  # [B, 1 + no_of_tokens, dim]
+        '''
         # print(f"AVmodel - RGB Features after Adding Positional Embeddings: {x.shape}")
+
+            # Original pos_embed is [1, num_tokens, dim]
+        pos_embed = self.v2.pos_embed  # shape: [1, N, dim]
+        if pos_embed.shape[1] != x.shape[1]:
+            # Interpolate along the token dimension:
+            pos_embed = nn.functional.interpolate(
+                pos_embed.transpose(1, 2),  # [1, dim, N]
+                size=x.shape[1],
+                mode="linear",
+                align_corners=False
+            ).transpose(1, 2)  # back to [1, new_N, dim]
+        x = x + pos_embed
+
 
         return x  # [B, 1 + num_tokens, dim]
 
