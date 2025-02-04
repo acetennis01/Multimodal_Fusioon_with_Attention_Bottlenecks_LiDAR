@@ -224,7 +224,7 @@ def collate_fn(batch):
     oxts_data = torch.stack(oxts_data)
 
     # Print final shapes to ensure correctness
-    print(f"Final point clouds batch shape: {point_clouds.shape}")
+    #print(f"Final point clouds batch shape: {point_clouds.shape}")
     
     return point_clouds, rgb_frames, timestamps, oxts_data
 
