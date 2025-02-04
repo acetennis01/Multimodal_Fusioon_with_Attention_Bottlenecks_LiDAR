@@ -141,11 +141,16 @@ def collate_fn(batch):
     return point_clouds, rgb_frames, timestamps, oxts_data
 '''
 def collate_fn(batch):
+
+    filtered_batch = [sample for sample in batch if sample[-1].item() != -1]
+    if len(filtered_batch) == 0:
+        return None
+
     point_clouds, rgb_frames, timestamps, oxts_data = [], [], [], []
     output_dir = "pseudo_images"
     i = 0
 
-    for point_cloud, rgb_frame, timestamp, oxts in batch:
+    for point_cloud, rgb_frame, timestamp, oxts in filtered_batch:
         print("OXTS sample:", oxts)
         pseudo_image = lidar_to_histogram_features(point_cloud)
         # Debug: print the min/max values and shape of the pseudo_image
@@ -192,14 +197,23 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
         
         optimizer.zero_grad()
 
+
+        # with autocast():
+        #     preds = model(point_clouds, rgb_frames)
+        #     labels = oxts_data[:, -5].long().to(device)  # Ensure labels are on the correct device
+        #     if labels.min().item() < 0 or labels.max().item() >= 28:
+        #         tqdm.write(f"Invalid labels detected: min={labels.min().item()}, max={labels.max().item()}")
+
+        #     # _loss = loss_fn(preds, labels).to(device)
+        #     _loss = loss_fn(preds, labels)
+
         with autocast():
             preds = model(point_clouds, rgb_frames)
-            labels = oxts_data[:, -1].long().to(device)  # Ensure labels are on the correct device
-            if labels.min().item() < 0 or labels.max().item() >= 28:
+            labels = oxts_data[:, -5].long().to(device)
+            if labels.min().item() < 0 or labels.max().item() >= args.num_classes:
                 tqdm.write(f"Invalid labels detected: min={labels.min().item()}, max={labels.max().item()}")
-
-            # _loss = loss_fn(preds, labels).to(device)
             _loss = loss_fn(preds, labels)
+
 
 
         scaler.scale(_loss).backward()
@@ -234,7 +248,7 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
             oxts_data = oxts_data.to(device)
 
             preds = model(point_clouds, rgb_frames)
-            labels = oxts_data[:, -1].long()
+            labels = oxts_data[:, -5].long()
             _loss = loss_fn(preds, labels)
 
             if torch.isnan(_loss):
