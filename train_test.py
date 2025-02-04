@@ -25,7 +25,7 @@ def parse_options():
     ##### ADAPTER AND LATENT PARAMETERS
     parser.add_argument('--adapter_dim', type=int, default=768, help='dimension of the low-rank adapter')
     parser.add_argument('--num_latent', type=int, default=4, help='number of latent tokens')
-    parser.add_argument('--num_classes', type=int, default=28, help='number of output classes')
+    parser.add_argument('--num_classes', type=int, default=7, help='number of output classes')
 
     ##### DATA
     parser.add_argument('--data_root', type=str, default='/Users/abhiramannaluru/Documents/data/raw_data_downloader/2011_09_26', help='path to KITTI dataset')
