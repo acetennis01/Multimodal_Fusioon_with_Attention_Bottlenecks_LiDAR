@@ -158,7 +158,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
         with autocast():
             preds = model(point_clouds, rgb_frames)
             labels = oxts_data[:, -1].long().to(device)  # Ensure labels are on the correct device
-            if labels.min().item() < 0 or labels.max().item() >= args.num_classes:
+            if labels.min().item() < 0 or labels.max().item() >= 28:
                 tqdm.write(f"Invalid labels detected: min={labels.min().item()}, max={labels.max().item()}")
 
             # _loss = loss_fn(preds, labels).to(device)
