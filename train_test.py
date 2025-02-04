@@ -89,6 +89,10 @@ def lidar_to_histogram_features(lidar, crop=256):
     features = np.transpose(features, (2, 0, 1)).astype(np.float32)  # Shape: (3, H, W)
     return features
 
+
+'''
+
+
 def collate_fn(batch):
     point_clouds, rgb_frames, timestamps, oxts_data = [], [], [], []
 
@@ -135,6 +139,39 @@ def collate_fn(batch):
     #print(f"Final point clouds batch shape: {point_clouds.shape}")
     
     return point_clouds, rgb_frames, timestamps, oxts_data
+'''
+def collate_fn(batch):
+    point_clouds, rgb_frames, timestamps, oxts_data = [], [], [], []
+    output_dir = "pseudo_images"
+    i = 0
+
+    for point_cloud, rgb_frame, timestamp, oxts in batch:
+        print("OXTS sample:", oxts)
+        pseudo_image = lidar_to_histogram_features(point_cloud)
+        # Debug: print the min/max values and shape of the pseudo_image
+        print(f"Sample {i} pseudo_image: min={pseudo_image.min()}, max={pseudo_image.max()}, shape={pseudo_image.shape}")
+        
+        # Optionally, if you expect a certain size (e.g., [3,224,224]) but the histogram is larger,
+        # you can resize the image. For example:
+        # import torchvision.transforms.functional as TF
+        # pseudo_image = TF.resize(torch.tensor(pseudo_image), [224, 224]).numpy()
+        
+        pseudo_image = torch.tensor(pseudo_image)  # Convert to tensor
+        point_clouds.append(pseudo_image)
+        rgb_frames.append(rgb_frame)
+        timestamps.append(timestamp)
+        oxts_data.append(oxts)
+
+        output_path = os.path.join(output_dir, f"pseudo_image_{i}.png")
+        torchvision.utils.save_image(pseudo_image, output_path)
+        i += 1
+
+    # Stack tensors
+    point_clouds = torch.stack(point_clouds)  # Expected shape: [B, 3, H, W]
+    rgb_frames = torch.stack(rgb_frames)
+    oxts_data = torch.stack(oxts_data)
+    return point_clouds, rgb_frames, timestamps, oxts_data
+
 
 def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device):
     epoch_loss = []
@@ -199,6 +236,9 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
             preds = model(point_clouds, rgb_frames)
             labels = oxts_data[:, -1].long()
             _loss = loss_fn(preds, labels)
+
+            if torch.isnan(_loss):
+                print("Loss is NaN!")
 
             epoch_loss.append(_loss.item())
             sum_correct_pred += (torch.argmax(preds, dim=1) == labels).sum().item()

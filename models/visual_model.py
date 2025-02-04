@@ -190,7 +190,11 @@ class AVmodel(nn.Module):
     def forward(self, pc, rgb):
         # Process point cloud (pseudo-image) and RGB features
         pc = self.forward_pc_features(pc)  # [B, dim]
+        if torch.isnan(pc).any():
+            print("NaN in PC features")
         rgb = self.forward_rgb_features(rgb)  # [B, 1 + num_tokens, dim]
+        if torch.isnan(rgb).any():
+            print("NaN in RGB features")
 
         # Process through the encoder (fusion of modalities)
         pc, rgb = self.forward_encoder(pc, rgb)  # [B, dim], [B, dim]
