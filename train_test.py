@@ -193,7 +193,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
     # Wrap the data loader with tqdm for progress bar
     progress_bar = tqdm(enumerate(train_data_loader), total=len(train_data_loader), desc="Training", leave=False)
     
-
+    '''
     for batch_idx, (point_clouds, rgb_frames, _, oxts_data) in progress_bar:
         # Move data to device
         point_clouds = point_clouds.to(device)
@@ -216,6 +216,8 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
         _loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+
+        # progress_bar.set_postfix(loss=np.mean(epoch_loss))
 
     '''
     for batch_idx, (point_clouds, rgb_frames, _, oxts_data) in progress_bar:
@@ -250,8 +252,6 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
             _loss = loss_fn(preds, labels)
 
 
-
-
         scaler.scale(_loss).backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         scaler.step(optimizer)
@@ -263,7 +263,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
 
         # Update tqdm's progress bar with current metrics
         progress_bar.set_postfix(loss=np.mean(epoch_loss))
-    '''
+    
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
 
@@ -296,6 +296,7 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
             total_samples += len(labels)
 
             progress_bar.set_postfix(loss=np.mean(epoch_loss))
+            progress_bar.refresh()
     
     acc = round(sum_correct_pred / total_samples, 5) * 100
     return np.mean(epoch_loss), acc
