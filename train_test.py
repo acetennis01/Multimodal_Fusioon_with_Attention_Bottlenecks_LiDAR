@@ -153,10 +153,10 @@ def collate_fn(batch):
     i = 0
 
     for point_cloud, rgb_frame, timestamp, oxts in filtered_batch:
-        print("OXTS sample:", oxts)
+        #print("OXTS sample:", oxts)
         pseudo_image = lidar_to_histogram_features(point_cloud)
         # Debug: print the min/max values and shape of the pseudo_image
-        print(f"Sample {i} pseudo_image: min={pseudo_image.min()}, max={pseudo_image.max()}, shape={pseudo_image.shape}")
+        #print(f"Sample {i} pseudo_image: min={pseudo_image.min()}, max={pseudo_image.max()}, shape={pseudo_image.shape}")
         
         # Optionally, if you expect a certain size (e.g., [3,224,224]) but the histogram is larger,
         # you can resize the image. For example:
