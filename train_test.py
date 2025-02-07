@@ -219,7 +219,7 @@ def train_one_epoch(train_data_loader, model, optimizer, loss_fn, device, args):
         sum_correct_pred += (torch.argmax(preds, dim=1) == labels).sum().item()
         total_samples += len(labels)
 
-        # progress_bar.set_postfix(loss=np.mean(epoch_loss))
+        progress_bar.set_postfix(loss=np.mean(epoch_loss))
 
     
 
