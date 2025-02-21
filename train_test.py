@@ -316,7 +316,7 @@ def train_test(args):
                                               '/mnt/mydata/2011_10_03'])
     '''
 
-    dataset = KITTIMultiDriveDataset(root_dirs=args.root_dir)
+    dataset = KITTIMultiDriveDataset(root_dirs=args.data_dir)
     
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
