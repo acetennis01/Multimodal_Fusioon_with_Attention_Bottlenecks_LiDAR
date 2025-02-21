@@ -308,11 +308,16 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
 
 
 def train_test(args):
+    '''
     dataset = KITTIMultiDriveDataset(root_dirs=['/mnt/mydata/2011_09_26',
                                               '/mnt/mydata/2011_09_28',
                                               '/mnt/mydata/2011_09_29',
                                               '/mnt/mydata/2011_09_30',
                                               '/mnt/mydata/2011_10_03'])
+    '''
+
+    dataset = KITTIMultiDriveDataset(root_dirs=args.root_dirs)
+    
     train_size = int(0.8 * len(dataset))
     val_size = len(dataset) - train_size
     train_dataset, val_dataset = torch.utils.data.random_split(dataset, [train_size, val_size])
