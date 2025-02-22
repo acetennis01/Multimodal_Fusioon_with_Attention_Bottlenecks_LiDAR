@@ -308,13 +308,6 @@ def val_one_epoch(val_data_loader, model, loss_fn, device):
 
 
 def train_test(args):
-    '''
-    dataset = KITTIMultiDriveDataset(root_dirs=['/mnt/mydata/2011_09_26',
-                                              '/mnt/mydata/2011_09_28',
-                                              '/mnt/mydata/2011_09_29',
-                                              '/mnt/mydata/2011_09_30',
-                                              '/mnt/mydata/2011_10_03'])
-    '''
 
     dataset = KITTIMultiDriveDataset(root_dir=args.data_root)
     
